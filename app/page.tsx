@@ -1,65 +1,88 @@
-import Image from "next/image";
+// app/page.tsx
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+import FilterPanel from '@/components/FilterPanel'
+import ProjectPanel from '@/components/ProjectPanel'
+import StatsBar from '@/components/StatsBar'
+import type { Project, FilterState } from '@/lib/types'
+
+const BengaluruMap = dynamic(() => import('@/components/BengaluruMap'), { ssr: false })
+
+const DEFAULT_FILTERS: FilterState = {
+  search: '',
+  flagTypes: [],
+  minDelayMonths: null,
+}
 
 export default function Home() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const projectId = params.get('project')
+    if (projectId) {
+      fetch(`/api/projects/${projectId}`)
+        .then((r) => r.json())
+        .then((data) => setSelectedProject(data))
+        .catch(() => {})
+    }
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (filters.search) params.set('search', filters.search)
+    filters.flagTypes.forEach((f) => params.append('flag_type', f))
+    if (filters.minDelayMonths) params.set('min_delay_months', String(filters.minDelayMonths))
+
+    fetch(`/api/projects?${params}`)
+      .then((r) => r.json())
+      .then((data) => setProjects(data.projects ?? []))
+      .finally(() => setLoading(false))
+  }, [filters])
+
+  const handleSelectProject = useCallback((project: Project) => {
+    setSelectedProject(project)
+    const url = new URL(window.location.href)
+    url.searchParams.set('project', project.id)
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
+  const handleClosePanel = useCallback(() => {
+    setSelectedProject(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('project')
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col h-screen bg-gray-950">
+      <StatsBar projects={projects} />
+      <div className="flex flex-1 overflow-hidden">
+        <FilterPanel filters={filters} onChange={setFilters} total={projects.length} />
+        <div className="flex-1 relative">
+          {loading && (
+            <div className="absolute inset-0 bg-gray-950/60 z-10 flex items-center justify-center">
+              <span className="text-gray-400 text-sm">Loading projects...</span>
+            </div>
+          )}
+          <BengaluruMap
+            projects={projects}
+            onSelectProject={handleSelectProject}
+            selectedId={selectedProject?.id ?? null}
+          />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        {selectedProject && (
+          <div className="w-96 shrink-0 overflow-hidden">
+            <ProjectPanel project={selectedProject} onClose={handleClosePanel} />
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }
